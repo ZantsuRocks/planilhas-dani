@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Importar e Exportar Excel com Ordenação</title>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+
+        #drop-area {
+            border: 2px dashed #888;
+            padding: 40px;
+            text-align: center;
+            color: #888;
+            margin-bottom: 20px;
+            border-radius: 10px;
+            transition: background-color 0.3s;
+        }
+
+        #drop-area.hover {
+            background-color: #f0f0f0;
+        }
+
+        #file-list {
+            margin-bottom: 20px;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h2>Solte arquivos Excel aqui</h2>
+    <div id="drop-area">Arraste e solte arquivos .xls ou .xlsx aqui</div>
+
+    <div id="file-list"><strong>Arquivos carregados:</strong>
+        <ul id="file-names"></ul>
+    </div>
+
+    <button id="processar">Processar e Baixar XLSX</button>
+
+    <script>
+        const dropArea = document.getElementById('drop-area');
+        const fileNames = document.getElementById('file-names');
+        const arquivos = [];
+
+        ['dragenter', 'dragover'].forEach(event => {
+            dropArea.addEventListener(event, e => {
+                e.preventDefault();
+                e.stopPropagation();
+                dropArea.classList.add('hover');
+            });
+        });
+
+        ['dragleave', 'drop'].forEach(event => {
+            dropArea.addEventListener(event, e => {
+                e.preventDefault();
+                e.stopPropagation();
+                dropArea.classList.remove('hover');
+            });
+        });
+
+        dropArea.addEventListener('drop', e => {
+            const files = Array.from(e.dataTransfer.files);
+            files.forEach(file => {
+                arquivos.push(file);
+                const li = document.createElement('li');
+                li.textContent = file.name;
+                fileNames.appendChild(li);
+            });
+        });
+
+        // Função auxiliar para converter data DD/MM/AAAA HH:MM:SS → Date
+        function parseDate(dateStr) {
+            const [d, m, yAndTime] = dateStr.split('/');
+            const [y, time] = yAndTime.split(' ');
+            return new Date(`${y}-${m}-${d}T${time}`);
+        }
+
+        document.getElementById('processar').addEventListener('click', async () => {
+            let allDataRows = [];
+            let headerRow = null;
+
+            for (const file of arquivos) {
+                const data = await file.arrayBuffer();
+                const workbook = XLSX.read(data, { type: 'array' });
+
+                workbook.SheetNames.forEach(sheetName => {
+                    const sheet = workbook.Sheets[sheetName];
+                    const range = XLSX.utils.decode_range(sheet['!ref']);
+
+                    let localHeader = [];
+
+                    for (let r = range.s.r; r <= range.e.r; r++) {
+                        const row = [];
+                        for (let c = range.s.c; c <= range.e.c; c++) {
+                            const cellAddress = XLSX.utils.encode_cell({ r, c });
+                            const cell = sheet[cellAddress];
+                            row.push(cell ? (cell.w || cell.v) : "");
+                        }
+
+                        if (r === 1) {
+                            // Linha 2 (índice 1): armazenar cabeçalho
+                            if (!headerRow) headerRow = row;
+                        } else if (r > 1) {
+                            allDataRows.push(row);
+                        }
+                    }
+                });
+            }
+
+            // Ordenar por data (coluna J = índice 9)
+            allDataRows.sort((a, b) => {
+                const dateA = parseDate(a[9] || "");
+                const dateB = parseDate(b[9] || "");
+                return dateA - dateB;
+            });
+
+            // Prepara a planilha com o cabeçalho e os dados
+            const finalData = [headerRow, ...allDataRows];
+            const newSheet = XLSX.utils.aoa_to_sheet(finalData);
+            const newWorkbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(newWorkbook, newSheet, "Consolidado");
+
+            // Baixar arquivo final
+            XLSX.writeFile(newWorkbook, "consolidado.xlsx");
+        });
+    </script>
+
+</body>
+
+</html>
